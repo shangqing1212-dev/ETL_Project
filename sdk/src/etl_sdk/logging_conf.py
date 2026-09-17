@@ -12,7 +12,8 @@ def setup_logging(level: str = "INFO", *, json_output: bool = False) -> None:
     shared_processors: list[Processor] = [
         structlog.contextvars.merge_contextvars,
         structlog.processors.add_log_level,
-        structlog.processors.TimeStamper(fmt="%Y-%m-%d %H:%M:%S"),
+        # utc=False: 与数仓本地时区存储(ADR-001)保持一致,便于对照排查
+        structlog.processors.TimeStamper(fmt="%Y-%m-%d %H:%M:%S", utc=False),
     ]
     renderer = structlog.processors.JSONRenderer(ensure_ascii=False) if json_output else structlog.dev.ConsoleRenderer()
     structlog.configure(

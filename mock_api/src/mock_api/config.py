@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     seed_base: str = "mock"  # 确定性数据种子前缀
     client_id: str = "test_client"
     client_secret: str = "test_secret"
+    fault_mode: str = "none"  # 启动时故障模式,运行中可用 /admin/faults 切换
 
 
 @lru_cache

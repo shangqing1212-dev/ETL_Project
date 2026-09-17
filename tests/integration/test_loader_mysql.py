@@ -12,9 +12,6 @@ from datetime import datetime
 import pytest
 import sqlalchemy as sa
 from etl_sdk.loaders.mysql import MySQLBatchLoader
-from testcontainers.community.mysql import MySqlContainer
-
-from scripts.migrate import migrate
 
 TABLE = "etl_meta.t_demo_orders"
 COLUMNS = ["shop_id", "order_id", "status", "amount_cents", "updated_at"]
@@ -32,31 +29,23 @@ def _demo_row(order_id: str, status: str, amount: int, updated_at: datetime) -> 
 
 
 @pytest.fixture(scope="module")
-def engine():
-    with MySqlContainer("mysql:8.4", username="etl", password="etl_pass", root_password="root_pass") as container:
-        # testcontainers 返回 mysql://(默认 mysqldb 驱动),统一转 pymysql(项目唯一 MySQL 驱动)
-        url = container.get_connection_url().replace("mysql://", "mysql+pymysql://", 1)
-        root_url = url.replace("etl:etl_pass@", "root:root_pass@", 1)
-        # 建库迁移与授权需 root(容器默认 etl 用户仅有 test 库权限)
-        migrate(root_url)
-        with sa.create_engine(root_url).begin() as conn:
-            conn.execute(sa.text("GRANT ALL PRIVILEGES ON etl_meta.* TO 'etl'@'%'"))
-        eng = sa.create_engine(url)
-        with eng.begin() as conn:
-            conn.execute(
-                sa.text(
-                    f"CREATE TABLE {TABLE} ("
-                    "shop_id BIGINT NOT NULL,"
-                    "order_id VARCHAR(64) NOT NULL,"
-                    "status VARCHAR(32) NOT NULL,"
-                    "amount_cents BIGINT NOT NULL,"
-                    "updated_at DATETIME(3) NOT NULL,"
-                    "PRIMARY KEY (shop_id, order_id)"
-                    ") ENGINE=InnoDB"
-                )
+def engine(mysql_engine: sa.Engine):
+    with mysql_engine.begin() as conn:
+        conn.execute(
+            sa.text(
+                f"CREATE TABLE {TABLE} ("
+                "shop_id BIGINT NOT NULL,"
+                "order_id VARCHAR(64) NOT NULL,"
+                "status VARCHAR(32) NOT NULL,"
+                "amount_cents BIGINT NOT NULL,"
+                "updated_at DATETIME(3) NOT NULL,"
+                "PRIMARY KEY (shop_id, order_id)"
+                ") ENGINE=InnoDB"
             )
-        yield eng
-        eng.dispose()
+        )
+    yield mysql_engine
+    with mysql_engine.begin() as conn:
+        conn.execute(sa.text(f"DROP TABLE IF EXISTS {TABLE}"))
 
 
 def _count(engine: sa.Engine) -> int:

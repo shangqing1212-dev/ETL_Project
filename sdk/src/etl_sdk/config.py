@@ -61,6 +61,15 @@ class PlatformSettings(BaseSettings):
     rate_limit_details: int = 30
 
 
+class ExtractionSettings(BaseSettings):
+    """抽取窗口与去重参数。"""
+
+    model_config = SettingsConfigDict(env_prefix="ETL_EXTRACTION_", env_file=".env", extra="ignore")
+
+    overlap_minutes: int = 60  # 窗口左移重叠(覆盖迟到更新)
+    delay_minutes: int = 5  # 窗口右界滞后(避开源端写入抖动)
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="ETL_", env_file=".env", extra="ignore")
 
@@ -69,6 +78,7 @@ class Settings(BaseSettings):
     log_format: str = "console"  # console/json
     db: DatabaseSettings = Field(default_factory=DatabaseSettings)
     platform: PlatformSettings = Field(default_factory=PlatformSettings)
+    extraction: ExtractionSettings = Field(default_factory=ExtractionSettings)
 
 
 @lru_cache
