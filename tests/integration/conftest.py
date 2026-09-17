@@ -45,3 +45,79 @@ def clean_state(mysql_engine: sa.Engine):
         for table in _CLEAN_TABLES:
             conn.execute(sa.text(f"DELETE FROM {table}"))
     yield mysql_engine
+
+
+@pytest.fixture()
+def extractor_factory(mysql_engine: sa.Engine):
+    """构造抽取器工厂(死信/DQ 测试用): 各容错组件按参数可选注入。"""
+    from datetime import datetime
+
+    from etl_sdk.alerts.base import AlertManager
+    from etl_sdk.dq.contracts import order_items_ods_contract, orders_ods_contract
+    from etl_sdk.dq.engine import DQEngine
+    from etl_sdk.extractors.base import BaseExtractor, EntitySpec
+    from etl_sdk.extractors.batches import BatchRecorder
+    from etl_sdk.extractors.pagination import PagePaginator
+    from etl_sdk.extractors.state import WatermarkState
+    from etl_sdk.loaders.dead_letter import DeadLetterRecorder
+    from etl_sdk.loaders.mysql import MySQLBatchLoader
+    from etl_sdk.mappers.orders import order_items_to_ods, order_to_ods
+
+    from tests.integration.helpers import (
+        ITEM_COLUMNS,
+        ITEM_PK,
+        ITEMS_TABLE,
+        ORDER_COLUMNS,
+        ORDER_PK,
+        ORDERS_TABLE,
+        CannedAdapter,
+    )
+
+    def factory(
+        *,
+        rows: list[dict],
+        now: datetime | None = None,
+        dead_letter: bool = True,
+        dead_letter_limit: float = 0.0,
+        dq: bool = False,
+        contract: bool = False,
+        alert_manager: AlertManager | None = None,
+    ) -> BaseExtractor:
+        orders_spec = EntitySpec(
+            table_name=ORDERS_TABLE,
+            columns=ORDER_COLUMNS,
+            pk_columns=ORDER_PK,
+            mapper=lambda r, **kw: order_to_ods(r, **kw),
+            children_mapper=lambda r, **kw: order_items_to_ods(r, **kw),
+            contract=orders_ods_contract() if contract else None,
+        )
+        items_spec = EntitySpec(
+            table_name=ITEMS_TABLE,
+            columns=ITEM_COLUMNS,
+            pk_columns=ITEM_PK,
+            mapper=lambda r, **kw: order_items_to_ods(r, **kw),
+            contract=order_items_ods_contract() if contract else None,
+        )
+        extractor = BaseExtractor(
+            adapter=CannedAdapter(rows),
+            paginator=PagePaginator(page_size=100),
+            entity=orders_spec,
+            loader=MySQLBatchLoader(mysql_engine, ORDERS_TABLE, ORDER_COLUMNS, ORDER_PK),
+            watermark=WatermarkState(mysql_engine),
+            recorder=BatchRecorder(mysql_engine),
+            shop_id=1,
+            platform="canned",
+            history_start=datetime(2026, 8, 25),
+            now_fn=(lambda: now) if now is not None else datetime.now,
+            dead_letter=DeadLetterRecorder(mysql_engine) if dead_letter else None,
+            dead_letter_limit=dead_letter_limit,
+            dq_engine=DQEngine(mysql_engine) if dq else None,
+            alert_manager=alert_manager,
+        )
+        extractor.add_child(
+            items_spec,
+            MySQLBatchLoader(mysql_engine, ITEMS_TABLE, ITEM_COLUMNS, ITEM_PK),
+        )
+        return extractor
+
+    return factory

@@ -55,10 +55,28 @@
 | etl_watermark | (table_name, shop_id, platform) → watermark_value/type |
 | etl_batch | 批次血缘:batch_id、window、run_type、行数、状态 |
 | etl_task_run | 任务运行记录(dag_id/task_id/data_interval/status) |
-| etl_load_error | 坏行死信(raw_row JSON + error_type) |
+| etl_load_error | 坏行死信(raw_row JSON + error_type + error_msg) |
 | dq_check_def | 数据质量规则定义(规则即配置) |
-| dq_check_result | DQ 执行结果 |
+| dq_check_result | DQ 执行结果(actual/expected/passed/detail,按 batch_id 关联批次) |
 | schema_migrations | sql/ 版本化执行记录 |
+
+## DQ 规则口径(规则即配置,sql/dq_rules.yaml → dq_check_def)
+
+| 规则 | 检查范围 | 语义 | 典型参数 |
+|---|---|---|---|
+| null_rate | 窗口级* | 某列空值率 ≤ max_rate | {column, max_rate} |
+| unique | 全表 | 列组合无重复组 | {columns: [...]} |
+| range | 窗口级* | 数值列 min/max ∈ [min, max] | {column, min, max} |
+| freshness | 窗口级* | 窗口内 max(updated_at) 距 now ≤ max_age_minutes(检出源端停滞) | {max_age_minutes} |
+| row_count_delta | etl_batch 历史 | 本批行数 vs 近 N 批成功均值,偏差 ≤ max_deviation | {max_deviation, lookback_batches} |
+| referential | 全表 | 子表引用列必须全部命中父表(可带 shop 配对) | {child_column, parent_table, parent_column} |
+
+\* 窗口级 = 本批窗口内落库的行(shop_id+platform 过滤,兼容批次重试);
+空窗口/无历史等无意义检查记为 passed 并注明"跳过",不误报。
+
+**死信语义**:映射/契约失败的坏行落 etl_load_error,不中断整批;
+死信率超阈值(默认 1%,可配)则中止批次(水位不推进 + error 告警)。
+error_type:mapper_error(映射异常)/ schema_mismatch(契约拦截)。
 
 ## 字段口径约定(示例,随 M4 补全)
 

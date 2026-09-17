@@ -39,8 +39,9 @@ uv sync --all-packages
 # 2. 起开发环境(需 Docker Desktop: MySQL 8.4 + 模拟 API;Airflow/Superset 在 M5/M4 加入)
 docker compose -f airflow/docker-compose.dev.yaml up -d
 
-# 3. 应用数仓 DDL(版本化,可重复执行)
+# 3. 应用数仓 DDL(版本化,可重复执行)+ 同步 DQ 规则
 uv run python scripts/migrate.py
+uv run python scripts/sync_dq_rules.py
 
 # 4. 运行测试
 uv run ruff check . && uv run mypy sdk/src mock_api/src
@@ -57,7 +58,8 @@ uv run pytest tests/integration -q   # 集成测试(testcontainers 起真实 MyS
 - [x] M0 环境准备与项目文档(虚拟环境、README、ADR)
 - [x] M1 骨架(uv workspace、SDK 骨架、mock_api 最小版、etl_meta DDL、CI)
 - [x] M2 抽取核心(适配器、水位线两阶段提交、双分页、限流、故障注入、断点续传;ODS DDL 提前落地)
-- [ ] M3 装载 + DQ + 告警
+- [x] M3 装载容错 + DQ + 告警(坏行死信、pandera 契约、六类 DQ 规则引擎、钉钉/企微/邮件告警、100 万行装载实测)
+- [ ] M4 数仓分层 + BI
 - [ ] M4 数仓分层 + BI
 - [ ] M5 Airflow 集成
 - [ ] M6 故障演练与回填压测

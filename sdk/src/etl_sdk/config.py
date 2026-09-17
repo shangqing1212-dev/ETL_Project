@@ -62,12 +62,32 @@ class PlatformSettings(BaseSettings):
 
 
 class ExtractionSettings(BaseSettings):
-    """抽取窗口与去重参数。"""
+    """抽取窗口与容错参数。"""
 
     model_config = SettingsConfigDict(env_prefix="ETL_EXTRACTION_", env_file=".env", extra="ignore")
 
     overlap_minutes: int = 60  # 窗口左移重叠(覆盖迟到更新)
     delay_minutes: int = 5  # 窗口右界滞后(避开源端写入抖动)
+    dead_letter_limit: float = 0.01  # 死信率上限(死信数/读取行数),0 表示永不中止
+    dq_enabled: bool = True  # 装载后是否执行 DQ 规则检查
+
+
+class AlertSettings(BaseSettings):
+    """告警通道配置(webhook 为空表示该通道关闭)。"""
+
+    model_config = SettingsConfigDict(env_prefix="ETL_ALERT_", env_file=".env", extra="ignore")
+
+    enabled: bool = True  # 总开关
+    min_level: str = "warning"  # 达到该级别才发送(info/warning/error/critical)
+    dingtalk_webhook: str = ""
+    dingtalk_secret: str = ""  # 加签密钥(机器人安全设置)
+    wecom_webhook: str = ""
+    smtp_host: str = ""
+    smtp_port: int = 465  # 465=SSL,587=STARTTLS
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    smtp_to: str = ""  # 逗号分隔多个收件人
 
 
 class Settings(BaseSettings):
@@ -79,6 +99,7 @@ class Settings(BaseSettings):
     db: DatabaseSettings = Field(default_factory=DatabaseSettings)
     platform: PlatformSettings = Field(default_factory=PlatformSettings)
     extraction: ExtractionSettings = Field(default_factory=ExtractionSettings)
+    alert: AlertSettings = Field(default_factory=AlertSettings)
 
 
 @lru_cache

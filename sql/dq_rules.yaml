@@ -1,0 +1,47 @@
+# DQ 规则定义(规则即配置): 由 scripts/sync_dq_rules.py 幂等同步进 etl_meta.dq_check_def
+# - 修改后重跑同步脚本即可新增规则;删除/停用需手工 UPDATE dq_check_def SET enabled=0
+# - severity: warn = 记录 + 告警不阻断;block = 失败中止批次且不推进水位
+# - null_rate/range/freshness 默认窗口级检查(本批窗口内落库的行,按 shop_id+platform 过滤),
+#   可加 scope: table 改全表;窗口级规则需抽取器提供窗口(直接调用引擎时显式传入)
+
+# --- ods_orders ---
+- table_name: dw.ods_orders
+  rule_type: null_rate
+  params: {column: buyer_nick, max_rate: 0.0}
+  severity: block
+
+- table_name: dw.ods_orders
+  rule_type: unique
+  params: {columns: [shop_id, order_id]}
+  severity: block
+
+- table_name: dw.ods_orders
+  rule_type: range
+  params: {column: order_amount_cents, min: 0, max: 500000000}
+  severity: warn
+
+- table_name: dw.ods_orders
+  rule_type: freshness
+  params: {column: updated_at, max_age_minutes: 2880}
+  severity: warn
+
+- table_name: dw.ods_orders
+  rule_type: row_count_delta
+  params: {max_deviation: 0.9, lookback_batches: 10}
+  severity: warn
+
+# --- ods_order_items ---
+- table_name: dw.ods_order_items
+  rule_type: range
+  params: {column: quantity, min: 1, max: 10000}
+  severity: warn
+
+- table_name: dw.ods_order_items
+  rule_type: referential
+  params:
+    child_column: order_id
+    child_shop_column: shop_id
+    parent_table: dw.ods_orders
+    parent_column: order_id
+    parent_shop_column: shop_id
+  severity: block

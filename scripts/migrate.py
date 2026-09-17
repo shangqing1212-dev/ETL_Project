@@ -14,11 +14,10 @@ import sys
 from pathlib import Path
 
 import sqlalchemy as sa
+from etl_sdk.config import get_settings
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DDL_DIR = PROJECT_ROOT / "sql" / "ddl"
-
-DEFAULT_URL = "mysql+pymysql://etl:etl_pass@localhost:3306/?charset=utf8mb4"
 
 _BOOTSTRAP_SCHEMA = (
     "CREATE TABLE IF NOT EXISTS etl_meta.schema_migrations ("
@@ -66,7 +65,8 @@ def migrate(url: str, ddl_dir: Path = DDL_DIR) -> list[str]:
 
 
 def main() -> None:
-    url = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_URL
+    # 默认从 .env 取服务器级连接(dev compose 映射 13306);也可显式传 URL 覆盖(如 root 建库)
+    url = sys.argv[1] if len(sys.argv) > 1 else get_settings().db.url
     versions = migrate(url)
     if versions:
         for v in versions:

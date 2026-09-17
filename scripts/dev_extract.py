@@ -15,12 +15,16 @@ from datetime import datetime, timedelta
 
 import sqlalchemy as sa
 from etl_sdk.adapters.mock import MockPlatformAdapter
+from etl_sdk.alerts import build_alert_manager
 from etl_sdk.config import get_settings
+from etl_sdk.dq.contracts import order_items_ods_contract, orders_ods_contract
+from etl_sdk.dq.engine import DQEngine
 from etl_sdk.extractors.base import BaseExtractor, EntitySpec, TimeWindow
 from etl_sdk.extractors.batches import BatchRecorder
 from etl_sdk.extractors.pagination import PagePaginator
 from etl_sdk.extractors.rate_limit import AdaptiveRateLimiter, TokenBucket
 from etl_sdk.extractors.state import WatermarkState
+from etl_sdk.loaders.dead_letter import DeadLetterRecorder
 from etl_sdk.loaders.mysql import MySQLBatchLoader
 from etl_sdk.logging_conf import setup_logging
 from etl_sdk.mappers.orders import order_items_to_ods, order_to_ods
@@ -77,12 +81,14 @@ def main() -> None:
         pk_columns=ORDER_PK,
         mapper=lambda r, **kw: order_to_ods(r, **kw),
         children_mapper=lambda r, **kw: order_items_to_ods(r, **kw),
+        contract=orders_ods_contract(),
     )
     items_spec = EntitySpec(
         table_name=ITEMS_TABLE,
         columns=ITEM_COLUMNS,
         pk_columns=ITEM_PK,
         mapper=lambda r, **kw: order_items_to_ods(r, **kw),
+        contract=order_items_ods_contract(),
     )
     extractor = BaseExtractor(
         adapter=adapter,
@@ -95,6 +101,10 @@ def main() -> None:
         platform=settings.platform.name,
         overlap=timedelta(minutes=settings.extraction.overlap_minutes),
         delay=timedelta(minutes=settings.extraction.delay_minutes),
+        dead_letter=DeadLetterRecorder(engine),
+        dead_letter_limit=settings.extraction.dead_letter_limit,
+        dq_engine=DQEngine(engine) if settings.extraction.dq_enabled else None,
+        alert_manager=build_alert_manager(settings.alert),
     )
     extractor.add_child(
         items_spec,
@@ -113,6 +123,7 @@ def main() -> None:
     print(
         f"[dev_extract] done: {result.table_name} run={result.run_type} "
         f"rows_read={result.rows_read} rows_written={result.rows_written} "
+        f"dead_letters={result.dead_letters} "
         f"watermark_advanced={result.watermark_advanced} batch={result.batch_id}"
     )
 

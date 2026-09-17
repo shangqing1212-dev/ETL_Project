@@ -15,6 +15,7 @@ dev = [
     "mypy>=1.10",
     "pre-commit>=3.8",
     "testcontainers>=4.0",
+    "types-pyyaml>=6.0",
 ]
 
 [tool.ruff]
@@ -28,3 +29,4 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4"]
 python_version = "3.12"
 strict = true
 files = ["sdk/src", "mock_api/src"]
+plugins = ["pandera.mypy"]
