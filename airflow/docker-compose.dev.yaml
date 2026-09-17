@@ -1,0 +1,46 @@
+# 开发环境编排(当前: MySQL 8.4 + mock_api;Airflow 服务在 M5 加入)
+# 用法: docker compose -f airflow/docker-compose.dev.yaml up -d
+name: etl-dev
+
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: etl-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root # 开发环境专用,生产走独立运维流程
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --default-time-zone=+08:00
+    ports:
+      # 宿主机 3306 已被本机 MySQL 服务占用,dev 映射到 13306
+      - "13306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ../sql/bootstrap:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -proot"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+
+  mock-api:
+    build:
+      context: ../mock_api
+    container_name: etl-mock-api
+    environment:
+      MOCK_API_ORDERS_PER_DAY: "500"
+      MOCK_API_TOKEN_TTL_SECONDS: "7200"
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/healthz')\""]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  mysql_data:

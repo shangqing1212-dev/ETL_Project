@@ -1,0 +1,30 @@
+[project]
+name = "etl-project"
+version = "0.1.0"
+description = "企业级电商数据 ETL 平台(API -> 数仓 -> BI)"
+requires-python = ">=3.12"
+
+[tool.uv.workspace]
+members = ["sdk", "mock_api"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+    "mypy>=1.10",
+    "pre-commit>=3.8",
+    "testcontainers>=4.0",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["sdk/src", "mock_api/src"]

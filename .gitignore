@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+build/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 环境与凭据
+.env
+*.env.local
+
+# 数据与临时文件
+data/
+*.csv
+*.parquet
+*.log
+logs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# 平台
+.DS_Store
+Thumbs.db

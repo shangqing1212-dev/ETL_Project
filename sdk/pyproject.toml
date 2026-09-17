@@ -1,0 +1,25 @@
+[project]
+name = "etl-sdk"
+version = "0.1.0"
+description = "ETL SDK: 平台适配器 / 抽取 / 装载 / 数据质量 / 告警"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.27",
+    "polars>=1.0",
+    "sqlalchemy>=2.0",
+    "pymysql>=1.1",
+    "cryptography>=42.0",
+    "tenacity>=9.0",
+    "structlog>=24.0",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "pandera[polars]>=0.20",
+    "pyyaml>=6.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/etl_sdk"]
