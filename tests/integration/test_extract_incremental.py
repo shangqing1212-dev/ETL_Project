@@ -106,14 +106,13 @@ def extractor_factory(mysql_engine: sa.Engine, http_client: httpx.Client):
             columns=ORDER_COLUMNS,
             pk_columns=ORDER_PK,
             mapper=lambda r, **kw: order_to_ods(r, **kw),
-            children_mapper=lambda r, **kw: order_items_to_ods(r, **kw),
         )
-        # 子实体规格: mapper 返回子行列表(由 add_child 展平装载)
+        # 子实体规格: rows_mapper 返回子行列表(由 add_child 展平装载)
         items_spec = EntitySpec(
             table_name=ITEMS_TABLE,
             columns=ITEM_COLUMNS,
             pk_columns=ITEM_PK,
-            mapper=lambda r, **kw: order_items_to_ods(r, **kw),
+            rows_mapper=lambda r, **kw: order_items_to_ods(r, **kw),
         )
         extractor = BaseExtractor(
             adapter=adapter,

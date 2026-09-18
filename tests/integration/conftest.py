@@ -14,6 +14,15 @@ from scripts.migrate import migrate
 _CLEAN_TABLES = (
     "dw.ods_order_items",
     "dw.ods_orders",
+    "dw.dwd_order_items",
+    "dw.dwd_orders",
+    "dw.dim_shop",
+    "dw.dim_date",
+    "dw.dim_product",
+    "dw.dws_shop_daily",
+    "dw.dws_product_daily",
+    "dw.ads_shop_overview",
+    "dw.ads_daily_kpi",
     "etl_meta.etl_watermark",
     "etl_meta.etl_batch",
     "etl_meta.etl_task_run",
@@ -88,14 +97,13 @@ def extractor_factory(mysql_engine: sa.Engine):
             columns=ORDER_COLUMNS,
             pk_columns=ORDER_PK,
             mapper=lambda r, **kw: order_to_ods(r, **kw),
-            children_mapper=lambda r, **kw: order_items_to_ods(r, **kw),
             contract=orders_ods_contract() if contract else None,
         )
         items_spec = EntitySpec(
             table_name=ITEMS_TABLE,
             columns=ITEM_COLUMNS,
             pk_columns=ITEM_PK,
-            mapper=lambda r, **kw: order_items_to_ods(r, **kw),
+            rows_mapper=lambda r, **kw: order_items_to_ods(r, **kw),
             contract=order_items_ods_contract() if contract else None,
         )
         extractor = BaseExtractor(

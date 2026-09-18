@@ -36,14 +36,23 @@
 # 1. 安装依赖(虚拟环境只服务 SDK/mock_api 开发测试;Airflow 本体在容器内)
 uv sync --all-packages
 
-# 2. 起开发环境(需 Docker Desktop: MySQL 8.4 + 模拟 API;Airflow/Superset 在 M5/M4 加入)
+# 2. 起开发环境(需 Docker Desktop: MySQL 8.4 + 模拟 API;Airflow 在 M5 加入)
 docker compose -f airflow/docker-compose.dev.yaml up -d
 
 # 3. 应用数仓 DDL(版本化,可重复执行)+ 同步 DQ 规则
 uv run python scripts/migrate.py
 uv run python scripts/sync_dq_rules.py
 
-# 4. 运行测试
+# 4. 抽数据(增量)+ 构建数仓(ODS → DWD → DWS → ADS,幂等)
+uv run python scripts/dev_extract.py
+uv run python scripts/build_dw.py --full        # 或 --days N 增量构建最近 N 天
+
+# 5. BI(Superset 6.1: 数据源/图表/3 张看板一键初始化,幂等)
+docker compose -f superset/docker-compose.superset.yaml up -d
+uv run python scripts/init_superset.py
+# 打开 http://localhost:8088(admin / admin123,见 superset compose)
+
+# 6. 运行测试
 uv run ruff check . && uv run mypy sdk/src mock_api/src
 uv run pytest tests/unit -q          # 单元测试(无外部依赖)
 uv run pytest tests/integration -q   # 集成测试(testcontainers 起真实 MySQL)
@@ -59,8 +68,7 @@ uv run pytest tests/integration -q   # 集成测试(testcontainers 起真实 MyS
 - [x] M1 骨架(uv workspace、SDK 骨架、mock_api 最小版、etl_meta DDL、CI)
 - [x] M2 抽取核心(适配器、水位线两阶段提交、双分页、限流、故障注入、断点续传;ODS DDL 提前落地)
 - [x] M3 装载容错 + DQ + 告警(坏行死信、pandera 契约、六类 DQ 规则引擎、钉钉/企微/邮件告警、100 万行装载实测)
-- [ ] M4 数仓分层 + BI
-- [ ] M4 数仓分层 + BI
+- [x] M4 数仓分层 + BI(DWD/DWS/ADS 全量 DDL、polars 转换层、build_dw 构建批、dim_date/dim_shop SCD2、Superset 3 张看板)
 - [ ] M5 Airflow 集成
 - [ ] M6 故障演练与回填压测
 - [ ] M7 生产化

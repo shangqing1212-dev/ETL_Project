@@ -59,19 +59,37 @@
 | 层 | 语义 | 更新方式 |
 |---|---|---|
 | ODS | API 实体 1:1 镜像,raw_json 防 schema 漂移 | upsert(updated_at 只升不降) |
-| DWD | 清洗、统一枚举、去重、SCD2 维表 | upsert 重算 |
-| DWS | 日粒度聚合 | insert-overwrite(DELETE 窗口 + 重插) |
-| ADS | BI 出口物理宽表 | insert-overwrite |
+| DWD | 清洗、统一枚举、SCD2 维表(ADR-005: 事实表自然键,维表代理键) | upsert 重算 |
+| DWS | 日粒度聚合(GMV 口径见数据字典) | insert-overwrite(DELETE 窗口 + 重插) |
+| ADS | BI 出口物理宽表(环比/退款率/动销率) | insert-overwrite |
 | etl_meta | 水位/批次/任务/DQ/死信/migration | append |
 
-## 5. 关键机制
+**构建流水线**(scripts/build_dw.py,店铺注册表 dags/config/shops.yaml 驱动):
+
+```
+ods_orders/ods_order_items(按 stat_date 窗口读)
+  → dwd_orders/dwd_order_items(状态归一 + 行金额派生,upsert)
+  → dim_product(全量明细重算最新态)/ dim_shop(注册表 SCD2 diff)/ dim_date(宽区间幂等填充)
+  → dws_shop_daily / dws_product_daily(GMV 口径聚合,窗口 delete + insert)
+  → ads_shop_overview(环比需前一日 DWS 行)/ ads_daily_kpi(平台级)
+```
+
+幂等三态:dwd/dim 重算收敛、dws/ads 覆盖收敛、SCD2 no-op;每步写 etl_batch(transform 类型),失败 error 告警。转换函数全部在 `etl_sdk.transforms`(polars 纯函数,无 IO),单测覆盖口径。
+
+## 5. BI(Superset)
+
+- 部署:superset/docker-compose.superset.yaml(Superset 6.1 自建镜像 + mysqlclient 驱动;dev SQLite 元数据,生产换 PostgreSQL + 开 CSRF/TLS)
+- 初始化:scripts/init_superset.py 走 REST API 幂等创建数据源(MySQL 数仓)→ 3 数据集 → 12 图表 → 3 张看板(店铺日报/全局 KPI/订单明细)
+- 验证口径:Superset 图表直接查 ADS/DWD 物理表,数字与数仓 SQL 直查一致(物理表解耦 BI 与数仓,口径变更只需重跑构建)
+
+## 6. 关键机制
 
 - **增量水位线**:`window = [wm - 1h overlap, now - 5min)`,批开始固定;全部成功才推进水位;回填不推进水位。详见 ADR-003。
 - **幂等**:业务主键唯一约束 + upsert;DWS/ADS 用 insert-overwrite 天然幂等。
 - **限流**:令牌桶按 `平台.端点` 配额,429 扣透支并自适应降速。
 - **多租户**:所有表带 shop_id;配置层级合并;DAG 动态任务映射按店铺展开。
 
-## 6. 部署形态
+## 7. 部署形态
 
 - **dev**:docker-compose 挂载源码热改;MySQL 8.4 容器内;SAM ALL_ADMINS。
 - **prod**:源码烘焙进镜像固定 tag;SAM 密码文件 + nginx 反代 + IP 白名单;日志轮转;MySQL 建议独立实例 + 每日备份 + binlog PITR。

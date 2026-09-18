@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from structlog import get_logger
 
@@ -86,15 +86,19 @@ def dedup_by_pk(
 
 @dataclass
 class EntitySpec:
-    """一个实体(表)的装载配置: 目标表 + 列 + 主键 + 行映射 + 装载前契约。"""
+    """一个实体(表)的装载配置: 目标表 + 列 + 主键 + 行映射 + 装载前契约。
+
+    主实体用 mapper(源行 -> 目标行);items 型子实体用 rows_mapper(父行 -> 子行列表),
+    两者语义不同,分开建模(子实体 mapper 为 None)。
+    """
 
     table_name: str
     columns: Sequence[str]
     pk_columns: Sequence[str]
-    # 行映射: (源行, batch_id=..., platform=...) -> 目标行
-    mapper: Callable[..., dict[str, Any]]
-    # items 型子实体: 父行 -> 子行列表(如订单明细)
-    children_mapper: Callable[..., list[dict[str, Any]]] | None = None
+    # 行映射: (源行, batch_id=..., platform=...) -> 目标行(主实体必填)
+    mapper: Callable[..., dict[str, Any]] | None = None
+    # items 型子实体映射: 父行 -> 子行列表(如订单明细)
+    rows_mapper: Callable[..., list[dict[str, Any]]] | None = None
     # 装载前契约(可选): 坏行进死信,不阻断好行
     contract: SchemaContract | None = None
 
@@ -283,6 +287,7 @@ class BaseExtractor:
         self, rows: Sequence[dict[str, Any]], spec: EntitySpec, batch_id: str
     ) -> tuple[list[dict[str, Any]], int]:
         """逐行映射,失败行进死信(不中断);返回 (好行, 死信数)。"""
+        assert spec.mapper is not None  # 主实体必配 mapper(EntitySpec docstring)
         mapped: list[dict[str, Any]] = []
         dead = 0
         for row in rows:
@@ -307,13 +312,13 @@ class BaseExtractor:
     ) -> tuple[list[dict[str, Any]], int]:
         """子实体映射(父行 -> 子行列表),失败以父行落死信。"""
         spec = self._children_spec
-        assert spec is not None
+        assert spec is not None and spec.rows_mapper is not None
         children: list[dict[str, Any]] = []
         dead = 0
         for row in rows:
             try:
-                child_rows = spec.mapper(row, batch_id=batch_id, platform=self._platform)
-                children.extend(cast("list[dict[str, Any]]", child_rows))
+                child_rows = spec.rows_mapper(row, batch_id=batch_id, platform=self._platform)
+                children.extend(child_rows)
             except Exception as exc:
                 self._record_dead_letters(
                     batch_id,

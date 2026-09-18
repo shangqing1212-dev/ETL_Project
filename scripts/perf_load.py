@@ -15,7 +15,7 @@ import argparse
 import random
 import time
 import uuid
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -102,7 +102,7 @@ def gen_items(n: int, batch_id: str) -> Iterable[dict[str, Any]]:
         }
 
 
-def _timed(label: str, fn) -> float:
+def _timed(label: str, fn: Callable[[], object]) -> float:
     started = time.monotonic()
     fn()
     elapsed = time.monotonic() - started
@@ -112,7 +112,7 @@ def _timed(label: str, fn) -> float:
 
 def _count(engine: sa.Engine, table: str) -> int:
     with engine.connect() as conn:
-        return conn.execute(sa.text(f"SELECT COUNT(*) FROM {table} WHERE shop_id = 2")).scalar_one()
+        return int(conn.execute(sa.text(f"SELECT COUNT(*) FROM {table} WHERE shop_id = 2")).scalar_one())
 
 
 def main() -> int:

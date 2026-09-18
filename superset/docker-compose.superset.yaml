@@ -1,0 +1,65 @@
+# Superset 开发编排(独立于 airflow/docker-compose.dev.yaml,共用其 MySQL)。
+# 用法:
+#   docker compose -f airflow/docker-compose.dev.yaml up -d     # 先起数仓(MySQL)
+#   docker compose -f superset/docker-compose.superset.yaml up -d
+#   uv run python scripts/init_superset.py                      # 建数据源/图表/3 张看板(幂等)
+#   http://localhost:8088 (admin / 见 SUPERSET_ADMIN_PASSWORD,默认 dev 口令 admin123)
+#
+# 生产差异: 元数据库换 PostgreSQL、开 CSRF/TLS(见 superset_config.py 注释)。
+name: etl-superset
+
+services:
+  superset-init:
+    build: .
+    container_name: etl-superset-init
+    environment:
+      SUPERSET_ADMIN_USERNAME: ${SUPERSET_ADMIN_USERNAME:-admin}
+      SUPERSET_ADMIN_PASSWORD: ${SUPERSET_ADMIN_PASSWORD:-admin123}
+      SUPERSET_ADMIN_FIRSTNAME: Admin
+      SUPERSET_ADMIN_LASTNAME: Superset
+      SUPERSET_ADMIN_EMAIL: admin@example.com
+    # 幂等: admin 已存在时 create-admin 报错被吞掉,继续 init(注意用 | 保留换行,勿用 \ 续行 —— compose 折叠会破坏 sh 语法)
+    command: |-
+      sh -c '
+      set -e
+      superset db upgrade
+      superset fab create-admin --username "$$SUPERSET_ADMIN_USERNAME" --firstname "$$SUPERSET_ADMIN_FIRSTNAME" --lastname "$$SUPERSET_ADMIN_LASTNAME" --email "$$SUPERSET_ADMIN_EMAIL" --password "$$SUPERSET_ADMIN_PASSWORD" || true
+      superset init
+      '
+    volumes:
+      - superset_home:/app/superset_home
+      - ./superset_config.py:/app/pythonpath/superset_config.py:ro
+    networks:
+      - etl-dev
+
+  superset:
+    build: .
+    container_name: etl-superset
+    depends_on:
+      superset-init:
+        condition: service_completed_successfully
+    environment:
+      SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY:-dev-secret-change-me}
+    ports:
+      - "8088:8088"
+    # 数仓 MySQL 在 airflow compose 的 etl-dev 网络内(容器名 etl-mysql),
+    # 直连容器网络,绕开 host.docker.internal 的 IPv6 网关问题;需先起 airflow/docker-compose.dev.yaml
+    networks:
+      - etl-dev
+    volumes:
+      - superset_home:/app/superset_home
+      - ./superset_config.py:/app/pythonpath/superset_config.py:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8088/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+networks:
+  etl-dev:
+    external: true
+    name: etl-dev_default  # airflow compose 项目名 etl-dev 的默认网络
+
+volumes:
+  superset_home:

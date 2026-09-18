@@ -80,14 +80,13 @@ def main() -> None:
         columns=ORDER_COLUMNS,
         pk_columns=ORDER_PK,
         mapper=lambda r, **kw: order_to_ods(r, **kw),
-        children_mapper=lambda r, **kw: order_items_to_ods(r, **kw),
         contract=orders_ods_contract(),
     )
     items_spec = EntitySpec(
         table_name=ITEMS_TABLE,
         columns=ITEM_COLUMNS,
         pk_columns=ITEM_PK,
-        mapper=lambda r, **kw: order_items_to_ods(r, **kw),
+        rows_mapper=lambda r, **kw: order_items_to_ods(r, **kw),
         contract=order_items_ods_contract(),
     )
     extractor = BaseExtractor(

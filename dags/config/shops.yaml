@@ -1,0 +1,8 @@
+# 店铺注册表(单源事实): M4 build_dw 维表 SCD2 / M5 DAG 动态展开(expand)/抽取配置均由此驱动。
+# 新增店铺: 追加条目即可;修改 shop_name/status 会触发 dim_shop SCD2 新版本(下次构建生效);
+# 移除条目会关闭对应 dim_shop 当前版本。真实平台接入时在此登记 platform。
+shops:
+  - shop_id: 1
+    platform: mock
+    shop_name: 演示店铺
+    status: active
