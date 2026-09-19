@@ -25,6 +25,9 @@ from starlette.types import ASGIApp
 
 VALID_MODES = {"none", "http_500", "rate_limit_429", "timeout", "malformed_json", "cursor_reset"}
 
+# timeout 模式注入的延迟秒数;生产默认 40s(超出客户端超时),E2E 缩短以控制测试时长
+FAULT_TIMEOUT_SECONDS = 40.0
+
 _state: dict[str, str] = {"mode": "none"}
 _counter = 0
 _cursor_reset_done = False
@@ -67,7 +70,7 @@ class FaultInjectorMiddleware(BaseHTTPMiddleware):
                 headers={"Retry-After": "1"},
             )
         if mode == "timeout" and _counter % 2 == 1:
-            await asyncio.sleep(40)
+            await asyncio.sleep(FAULT_TIMEOUT_SECONDS)
             return await call_next(request)
         if mode == "malformed_json" and _counter % 2 == 0:
             return Response(content=b"{broken json", media_type="application/json", status_code=200)

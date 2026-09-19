@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from abc import ABC, abstractmethod
 from datetime import datetime
@@ -94,8 +95,9 @@ class BaseHTTPAdapter(BasePlatformAdapter):
     # ---- 带重试的请求 ----
 
     @retry(
+        # RequestError 覆盖网络/协议/解码等全部请求级瞬态(TransportError/DecodingError/ProtocolError 均其子类)
         retry=retry_if_exception_type(
-            (RateLimitedError, httpx.TimeoutException, httpx.TransportError, httpx.HTTPStatusError)
+            (RateLimitedError, httpx.TimeoutException, httpx.RequestError, httpx.HTTPStatusError)
         ),
         stop=stop_after_attempt(RETRY_ATTEMPTS),
         wait=wait_exponential(multiplier=1, min=RETRY_WAIT_MIN_SECONDS, max=RETRY_WAIT_MAX_SECONDS),
@@ -119,4 +121,9 @@ class BaseHTTPAdapter(BasePlatformAdapter):
         if response.status_code >= 400:
             raise ApiError(f"{self.platform} {path} -> HTTP {response.status_code}: {response.text[:200]}")
         self._rate_limiter.on_success()
-        return cast("dict[str, Any]", response.json())
+        try:
+            return cast("dict[str, Any]", response.json())
+        except json.JSONDecodeError as exc:
+            # 坏 JSON 视为瞬态(网关截断/平台异常),包成 DecodingError(属 TransportError)走重试白名单;
+            # 重试耗尽仍失败则中断批次 —— 坏数据不进死信(死信只承载"可定位的行"问题)
+            raise httpx.DecodingError(f"{self.platform} {path} 返回非法 JSON") from exc

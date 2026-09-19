@@ -29,6 +29,17 @@ jobs:
       # ubuntu-latest 自带 docker,testcontainers 直接可用
       - run: uv run pytest tests/integration -q
 
+  e2e:
+    # 故障注入 E2E: 真实 mock API(uvicorn 进程内)+ 真实 MySQL + SDK 重试/幂等链路
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - run: uv sync --all-packages
+      - run: uv run pytest tests/e2e -q
+
   airflow-parse:
     # DAG 解析验证: 在官方 Airflow 镜像容器内装 SDK、跑 dags list / tasks list。
     # Airflow 不支持 Windows/非容器环境,本地无法跑;这里保证 DAG 语法与 provider 注册始终有效。

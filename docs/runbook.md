@@ -67,10 +67,21 @@ dws_daily 回填时构建窗口起点=data_interval_start。回填进度用 `air
 
 - 构建新 tag 镜像 → 灰度测试 DAG → `docker compose pull && up -d` → 自动 `db migrate` → 失败回滚旧 tag
 
-## 6. 常见故障处置(待 M6 演练后回填)
+## 6. 常见故障处置(M6 故障演练验证过)
 
-| 故障 | 症状 | 处置 |
-|---|---|---|
-| 平台 API 限流加剧 | 任务变慢、429 日志增多 | 检查配额与降速参数 |
-| 源端 schema 变更 | DQ 契约失败/坏行激增 | 查 raw_json,更新适配器与 DDL |
-| 水位线漂移 | 重复拉取过多 | 查 etl_watermark,必要时手工修正 |
+| 故障 | 症状 | 自动恢复 | 处置 |
+|---|---|---|---|
+| 平台 5xx | 任务日志 HTTPStatusError | SDK tenacity 指数退避重试 5 次(1s~120s) | 持续失败→查平台侧;批次 failed + error 告警,水位不动,重跑即续 |
+| 平台 429 限流 | 日志 RateLimitedError | 读 Retry-After 等待重试;连续 429 自适应降速 20% | 检查配额;调低 ETL_PLATFORM_RATE_LIMIT_* |
+| 响应超时/网络抖动 | ReadTimeout/RequestError | 请求级重试(白名单覆盖全部 RequestError) | 网络侧排查;timeout_seconds 按平台 SLA 调 |
+| 坏 JSON 页面 | 日志"返回非法 JSON" | 按瞬态重试(DecodingError ∈ RequestError) | 重试耗尽仍失败→批次失败告警,查平台网关 |
+| 游标重置 | 翻页重复 | 批内去重 + upsert 幂等吸收,不重不漏 | 无需干预;注意日志 rows_read > 实际行数属正常 |
+| 坏行(金额非法/缺字段) | etl_load_error 增长 | 坏行进死信,好行照常装载 | 查 raw_json 定位源端数据问题;死信率超阈值(1%)自动中止 |
+| DQ block | 任务失败 + block 告警 | 无(设计为硬失败) | 查 dq_check_result(actual/expected),修数据或调整规则后重跑 |
+| 抽取批次失败 | etl_batch status=failed | Airflow retries(3 次) | 水位未动,直接重跑/重触发即安全续跑 |
+
+**回填 30 天参考数据**(2026-09 实测): 30 天 15,021 单 + 15,021 明细,抽取 2m45s;
+全量构建(DWD/DWS/ADS)3.8s;回填后与实时链路逐值一致(9-15/9-16 GMV 完全相同)。
+
+**mock 平台分页性能**(M6 修复): 同窗口结果缓存,翻页不再每页重算全窗口 ——
+回填大窗口前确认 mock_api 已含该修复(真实平台按平台分页语义,不受影响)。

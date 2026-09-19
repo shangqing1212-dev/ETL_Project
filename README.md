@@ -61,6 +61,7 @@ uv run python scripts/init_superset.py
 uv run ruff check . && uv run mypy sdk/src mock_api/src
 uv run pytest tests/unit -q          # 单元测试(无外部依赖)
 uv run pytest tests/integration -q   # 集成测试(testcontainers 起真实 MySQL)
+uv run pytest tests/e2e -q           # E2E(真实 mock API + MySQL: 故障注入矩阵/幂等校验和)
 ```
 
 > 注意:Airflow 不支持原生 Windows,开发与生产均在 Docker/Linux 环境运行。
@@ -75,7 +76,8 @@ uv run pytest tests/integration -q   # 集成测试(testcontainers 起真实 MyS
 - [x] M3 装载容错 + DQ + 告警(坏行死信、pandera 契约、六类 DQ 规则引擎、钉钉/企微/邮件告警、100 万行装载实测)
 - [x] M4 数仓分层 + BI(DWD/DWS/ADS 全量 DDL、polars 转换层、build_dw 构建批、dim_date/dim_shop SCD2、Superset 3 张看板)
 - [x] M5 Airflow 集成(3.3.1 自定义镜像、EtlTable/DwBuild/DqScan 三个 Operator、3 个 DAG、SAM、dev/prod compose、回填封装)
-- [ ] M6 故障演练与回填压测
+- [x] M6 故障演练与回填压测(故障注入 E2E 进 CI、幂等校验和、30 天回填实测、mock 分页性能修复、runbook 故障处置表)
+- [ ] M7 生产化
 - [ ] M6 故障演练与回填压测
 - [ ] M7 生产化
 

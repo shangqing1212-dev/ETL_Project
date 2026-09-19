@@ -36,3 +36,12 @@ def test_window_filter_and_sort() -> None:
     )
     updateds = [o["updated_at"] for o in rows]
     assert updateds == sorted(updateds), "应按 updated_at 升序返回(供断点续传使用)"
+
+
+def test_window_result_cached() -> None:
+    """同窗口翻页多次调用返回同一缓存对象(M6 修复: 分页不再每页重算全窗口)。"""
+    args = (datetime(2026, 9, 3, 0, 0), datetime(2026, 9, 5, 0, 0))
+    a = gen_orders_between(*args, shop_id=1, seed_base="mock", orders_per_day=100)
+    b = gen_orders_between(*args, shop_id=1, seed_base="mock", orders_per_day=100)
+    assert a is b  # 缓存命中(同对象),非重新生成
+    assert a == b and len(a) > 0

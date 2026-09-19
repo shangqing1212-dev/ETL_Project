@@ -9,7 +9,6 @@
 
 from __future__ import annotations
 
-import json
 import threading
 import time
 from datetime import datetime
@@ -184,22 +183,22 @@ def test_incremental_two_runs_idempotent(clean_state: sa.Engine, extractor_facto
     assert result3.rows_read > 0
 
 
-def test_watermark_not_advanced_on_failure(clean_state: sa.Engine, extractor_factory) -> None:
-    extractor = extractor_factory(paginator=PagePaginator(page_size=100), now=datetime(2026, 9, 2, 0, 0, 0))
+def test_malformed_json_recovers_via_retry(clean_state: sa.Engine, extractor_factory) -> None:
+    """坏 JSON 按瞬态重试(M6 起: DecodingError ∈ RequestError 重试白名单),最终成功并推进水位。
+
+    "失败不动水位"由 M3 死信阈值中止测试覆盖(DeadLetterLimitExceeded → failed + 水位不动)。
+    """
+    now = datetime(2026, 9, 2, 0, 0, 0)
+    extractor = extractor_factory(paginator=PagePaginator(page_size=100), now=now)
     set_fault("malformed_json")
     try:
-        # 非法 JSON 属数据问题,适配器不重试,直接上抛(死信表在 M3 承接)
-        with pytest.raises(json.JSONDecodeError):
-            extractor.extract(run_type="incremental")
+        result = extractor.extract(run_type="incremental")
     finally:
         set_fault("none")
-    assert _watermark(clean_state, ORDERS_TABLE) is None
-    with clean_state.connect() as conn:
-        status = conn.execute(
-            sa.text("SELECT status FROM etl_meta.etl_batch WHERE table_name = :t ORDER BY started_at DESC LIMIT 1"),
-            {"t": ORDERS_TABLE},
-        ).scalar_one()
-    assert status == "failed"
+    expected = _expected_orders(result.window.start, result.window.end)
+    assert result.rows_read == len(expected)
+    assert _count(clean_state, ORDERS_TABLE) == len(expected)
+    assert _watermark(clean_state, ORDERS_TABLE) == result.window.end
 
 
 def test_http_500_fault_recovers_via_retry(clean_state: sa.Engine, extractor_factory) -> None:

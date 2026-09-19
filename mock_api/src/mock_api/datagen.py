@@ -84,6 +84,7 @@ def _to_local_naive(dt: datetime) -> datetime:
     return dt
 
 
+@lru_cache(maxsize=128)
 def gen_orders_between(
     start: datetime,
     end: datetime,
@@ -91,8 +92,13 @@ def gen_orders_between(
     shop_id: int = 1,
     seed_base: str,
     orders_per_day: int,
-) -> list[dict[str, Any]]:
-    """生成 [start, end) 窗口内 updated_at 的全部订单(按 updated_at 升序)。"""
+) -> tuple[dict[str, Any], ...]:
+    """生成 [start, end) 窗口内 updated_at 的全部订单(按 updated_at 升序)。
+
+    窗口结果缓存: 抽取批对同一窗口翻多页,每页重算全窗口是 O(页数×窗口) 的无谓开销
+    (M2 遗留问题,30 天回填时放大);缓存后同窗口只生成一次,分页仅切片。
+    参数全部可哈希,键 = 窗口参数;maxsize 覆盖并发抽取的若干活跃窗口。
+    """
     start, end = _to_local_naive(start), _to_local_naive(end)
     rows: list[dict[str, Any]] = []
     d = start.date()
@@ -103,7 +109,7 @@ def gen_orders_between(
             if start <= datetime.fromisoformat(o["updated_at"]) < end
         )
         d += timedelta(days=1)
-    return rows
+    return tuple(rows)
 
 
 def default_orders_per_day() -> int:

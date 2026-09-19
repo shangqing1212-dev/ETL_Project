@@ -20,7 +20,7 @@ from etl_sdk.dq.contracts import order_items_ods_contract, orders_ods_contract
 from etl_sdk.dq.engine import DQEngine
 from etl_sdk.extractors.base import BaseExtractor, EntitySpec, TimeWindow
 from etl_sdk.extractors.batches import BatchRecorder
-from etl_sdk.extractors.pagination import PagePaginator
+from etl_sdk.extractors.pagination import PagePaginator, Paginator
 from etl_sdk.extractors.rate_limit import AdaptiveRateLimiter, TokenBucket
 from etl_sdk.extractors.state import WatermarkState
 from etl_sdk.loaders.dead_letter import DeadLetterRecorder
@@ -133,6 +133,7 @@ def build_extractor(
     *,
     shop_id: int,
     platform: str,
+    paginator: Paginator | None = None,
     alert_manager: AlertManager | None = None,
 ) -> BaseExtractor:
     """组装订单抽取器(主表 ods_orders + 子表 ods_order_items,含死信/DQ/告警)。"""
@@ -152,7 +153,7 @@ def build_extractor(
     )
     extractor = BaseExtractor(
         adapter=adapter,
-        paginator=PagePaginator(page_size=settings.platform.page_size),
+        paginator=paginator or PagePaginator(page_size=settings.platform.page_size),
         entity=orders_spec,
         loader=MySQLBatchLoader(engine, ORDERS_TABLE, ORDER_COLUMNS, ORDER_PK),
         watermark=WatermarkState(engine),
