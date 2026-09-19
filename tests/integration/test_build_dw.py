@@ -6,10 +6,10 @@ from datetime import date, datetime
 
 import pytest
 import sqlalchemy as sa
+from etl_sdk.dw.build import load_shop_registry, run_build
 from etl_sdk.loaders.mysql import MySQLBatchLoader
 from etl_sdk.mappers.orders import order_items_to_ods, order_to_ods
 
-from scripts.build_dw import load_shop_registry, run_build
 from tests.integration.helpers import (
     ITEM_COLUMNS,
     ITEM_PK,

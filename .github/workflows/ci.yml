@@ -28,3 +28,30 @@ jobs:
       - run: uv sync --all-packages
       # ubuntu-latest 自带 docker,testcontainers 直接可用
       - run: uv run pytest tests/integration -q
+
+  airflow-parse:
+    # DAG 解析验证: 在官方 Airflow 镜像容器内装 SDK、跑 dags list / tasks list。
+    # Airflow 不支持 Windows/非容器环境,本地无法跑;这里保证 DAG 语法与 provider 注册始终有效。
+    runs-on: ubuntu-latest
+    container: apache/airflow:3.3.1-python3.12
+    env:
+      AIRFLOW__CORE__EXECUTOR: airflow.executors.sequential_executor.SequentialExecutor
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install SDK into image
+        run: pip install --no-cache-dir ./sdk
+      - name: Initialize metadata (SQLite, parse-only)
+        run: airflow db migrate
+      - name: Copy DAGs
+        run: cp -r dags/. /opt/airflow/dags/
+      - name: Verify provider registration
+        run: airflow providers list | grep -E "etl-sdk"
+      - name: List DAGs (解析验证)
+        run: airflow dags list
+      - name: List tasks
+        run: |
+          airflow tasks list etl_orders
+          airflow tasks list dws_daily
+          airflow tasks list dq_monitor

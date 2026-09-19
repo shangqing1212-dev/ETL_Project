@@ -1,5 +1,11 @@
-# 开发环境编排(当前: MySQL 8.4 + mock_api;Airflow 服务在 M5 加入)
+# 开发环境编排(MySQL 8.4 + mock_api + Airflow 3.3: webserver/scheduler)
 # 用法: docker compose -f airflow/docker-compose.dev.yaml up -d
+#
+# 首次起完:
+#   - Airflow UI: http://localhost:8080,SAM 用户 admin,密码见
+#     airflow_home 卷内 simple_auth_manager_passwords.json.generated(或 webserver 启动日志)
+#   - 数据通道: etl_meta Connection(airflow-init 自动建)指向本 compose 的 MySQL
+# 注意: DAG 解析期只读 YAML 注册表,禁 DB 访问(Airflow 3 硬约束);dev 挂载源码热改。
 name: etl-dev
 
 services:
@@ -42,5 +48,107 @@ services:
       retries: 10
       start_period: 10s
 
+  airflow-init:
+    build:
+      context: ..
+      dockerfile: airflow/Dockerfile
+    container_name: etl-airflow-init
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment: &airflow-env
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: mysql+pymysql://etl:etl_pass@etl-mysql:3306/airflow?charset=utf8mb4
+      AIRFLOW__CORE__EXECUTOR: airflow.executors.local_executor.LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+      # 任务 worker 与 api-server 分容器部署,必须显式指定 execution API(否则默认连 localhost:8080 → refused)
+      AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-webserver:8080/execution/
+      AIRFLOW__API__BASE_URL: http://localhost:18080 # api-server 对外地址(浏览器访问,dev)
+      PYTHONPATH: /opt/airflow/sdk-src
+      TZ: Asia/Shanghai
+    # 幂等: metadata 库兜底建库授权(存量库手动跑过 init_users.sql 也兼容) → migrate → Connection 补建
+    command: >
+      bash -c "
+      python -c \"import pymysql;c=pymysql.connect(host='etl-mysql',user='root',password='root',charset='utf8mb4');c.cursor().execute('CREATE DATABASE IF NOT EXISTS airflow DEFAULT CHARACTER SET utf8mb4');c.cursor().execute(\\\"GRANT ALL PRIVILEGES ON airflow.* TO 'etl'@'%'\\\");c.close()\" &&
+      airflow db migrate &&
+      (airflow connections get etl_meta >/dev/null 2>&1 || airflow connections add etl_meta --conn-uri 'mysql+pymysql://etl:etl_pass@etl-mysql:3306/etl_meta?charset=utf8mb4') &&
+      (airflow connections get mock_api >/dev/null 2>&1 || airflow connections add mock_api --conn-type http --conn-host mock-api --conn-port 8080 --conn-login test_client --conn-password test_secret --conn-extra '{\"base_url\": \"http://mock-api:8080\"}')
+      "
+    volumes:
+      - airflow_home:/opt/airflow
+
+  airflow-webserver:
+    build:
+      context: ..
+      dockerfile: airflow/Dockerfile
+    container_name: etl-airflow-webserver
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      mock-api:
+        condition: service_healthy
+    environment: *airflow-env
+    ports:
+      - "18080:8080" # 8080 被 mock-api、8088 被 Superset 占用,Airflow UI 映射到 18080
+    volumes:
+      - airflow_home:/opt/airflow
+      - ../dags:/opt/airflow/dags:ro
+      - ../sdk/src:/opt/airflow/sdk-src:ro # dev 热改: PYTHONPATH 优先于镜像内安装的 SDK
+    command: api-server # Airflow 3.3: webserver 命令已移除,统一为 api-server(UI+API)
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  airflow-dag-processor:
+    # Airflow 3.3: DAG 解析是独立组件,没有它 scheduler 不会加载任何 DAG
+    build:
+      context: ..
+      dockerfile: airflow/Dockerfile
+    container_name: etl-airflow-dag-processor
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      mock-api:
+        condition: service_healthy
+    environment: *airflow-env
+    volumes:
+      - airflow_home:/opt/airflow
+      - ../dags:/opt/airflow/dags:ro
+      - ../sdk/src:/opt/airflow/sdk-src:ro
+    command: dag-processor
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type DagProcessorJob --hostname $(hostname) 2>/dev/null || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 30
+      start_period: 60s
+
+  airflow-scheduler:
+    build:
+      context: ..
+      dockerfile: airflow/Dockerfile
+    container_name: etl-airflow-scheduler
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      mock-api:
+        condition: service_healthy
+    environment: *airflow-env
+    volumes:
+      - airflow_home:/opt/airflow
+      - ../dags:/opt/airflow/dags:ro
+      - ../sdk/src:/opt/airflow/sdk-src:ro
+    command: scheduler
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname $(hostname) 2>/dev/null || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 30
+      start_period: 60s
+
 volumes:
   mysql_data:
+  airflow_home:

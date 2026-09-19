@@ -23,3 +23,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/etl_sdk"]
+
+# Airflow 3 provider 注册(自定义 Operator/Hook 的唯一插件机制)
+[project.entry-points.apache_airflow_provider]
+provider_info = "etl_sdk.airflow.provider:get_provider_info"

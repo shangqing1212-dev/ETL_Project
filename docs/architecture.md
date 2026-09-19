@@ -82,14 +82,26 @@ ods_orders/ods_order_items(按 stat_date 窗口读)
 - 初始化:scripts/init_superset.py 走 REST API 幂等创建数据源(MySQL 数仓)→ 3 数据集 → 12 图表 → 3 张看板(店铺日报/全局 KPI/订单明细)
 - 验证口径:Superset 图表直接查 ADS/DWD 物理表,数字与数仓 SQL 直查一致(物理表解耦 BI 与数仓,口径变更只需重跑构建)
 
-## 6. 关键机制
+## 6. Airflow 编排(M5)
+
+- **镜像**: `apache/airflow:3.3.1-python3.12` + SDK wheel(airflow/Dockerfile);业务逻辑 100% 在 SDK,镜像只打包
+- **插件机制**: Airflow 3 统一 provider entry_point(`apache_airflow_provider` → `etl_sdk.airflow.provider.get_provider_info`),注册 EtlMetaHook + 三个 Operator:
+  - `EtlTableOperator`: 单店铺增量抽取(读 dag_run.run_type:backfill 窗口=data_interval 不推水位,否则按水位)
+  - `DwBuildOperator`: 数仓构建(回填窗口=data_interval_start,常规重建近 3 天)
+  - `DqScanOperator`: 最近 24h 窗口 DQ 扫描(run_type=monitor,block 失败任务失败)
+- **DAG**(薄文件,dags/): etl_orders(每小时,expand 按店铺)/ dws_daily(每日 02:30)/ dq_monitor(每日 08:00/20:00);解析期只读 shops.yaml,零 DB 访问(Airflow 3 硬约束)
+- **鉴权**: SAM(Simple Auth Manager,3.x 默认;dev 定位)。密码文件持久化挂载;生产 nginx TLS 反代 + IP 白名单(airflow/nginx.conf),密码轮换见 runbook
+- **回填**: scripts/backfill_airflow.py 封装 `airflow dags backfill`;SDK 侧 run_type=backfill 不推进水位,同窗口重跑幂等
+- **可观测**: 每任务写 etl_task_run(dag_id/task_id/data_interval/耗时),与 etl_batch 关联排障;失败任务由 Airflow retries + SDK error 告警双链路处理
+
+## 7. 关键机制
 
 - **增量水位线**:`window = [wm - 1h overlap, now - 5min)`,批开始固定;全部成功才推进水位;回填不推进水位。详见 ADR-003。
 - **幂等**:业务主键唯一约束 + upsert;DWS/ADS 用 insert-overwrite 天然幂等。
 - **限流**:令牌桶按 `平台.端点` 配额,429 扣透支并自适应降速。
 - **多租户**:所有表带 shop_id;配置层级合并;DAG 动态任务映射按店铺展开。
 
-## 7. 部署形态
+## 8. 部署形态
 
 - **dev**:docker-compose 挂载源码热改;MySQL 8.4 容器内;SAM ALL_ADMINS。
 - **prod**:源码烘焙进镜像固定 tag;SAM 密码文件 + nginx 反代 + IP 白名单;日志轮转;MySQL 建议独立实例 + 每日备份 + binlog PITR。

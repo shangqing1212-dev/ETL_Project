@@ -1,0 +1,99 @@
+# 生产编排(镜像固化 + SAM 密码文件 + nginx 反代 + 资源限制)。
+# 与 dev 的差异(计划「生产部署要点」):
+#   - 无源码挂载,SDK 与 DAG 全部烘焙进镜像(版本写死,见 build.args)
+#   - SAM 密码文件持久化挂载,密码按 runbook 轮换;对外只暴露 nginx(IP 白名单在 nginx 层)
+#   - 资源限制 + 日志轮转(airflow 镜像自带日志保留配置,此处补卷持久化)
+# 上线流程见 docs/runbook.md(M7 生产化章节)。
+name: etl-prod
+
+services:
+  airflow-webserver:
+    image: registry.example.com/etl-airflow:3.3.1 # CI 构建推送后替换为真实仓库
+    container_name: etl-prod-webserver
+    restart: unless-stopped
+    environment: &airflow-env
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW_META_DB_URI} # 生产 MySQL/Postgres,由密钥系统注入
+      AIRFLOW__CORE__EXECUTOR: airflow.executors.local_executor.LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+      AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-webserver:8080/execution/
+      AIRFLOW__API__BASE_URL: ${AIRFLOW_PUBLIC_URL} # 对外地址(nginx https 域名)
+      ETL_ENV: prod
+      ETL_LOG_FORMAT: json
+      ETL_PLATFORM_BASE_URL: ${ETL_PLATFORM_BASE_URL}
+      ETL_ALERT_DINGTALK_WEBHOOK: ${ETL_ALERT_DINGTALK_WEBHOOK:-}
+      ETL_ALERT_DINGTALK_SECRET: ${ETL_ALERT_DINGTALK_SECRET:-}
+      ETL_ALERT_WECOM_WEBHOOK: ${ETL_ALERT_WECOM_WEBHOOK:-}
+    ports:
+      - "127.0.0.1:8080:8080" # 只绑本机,由 nginx 反代对外
+    volumes:
+      - airflow_home:/opt/airflow # 含 SAM 密码文件,持久化
+      - airflow_logs:/opt/airflow/logs
+    command: api-server # Airflow 3.3: webserver 命令已移除
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
+  airflow-scheduler:
+    image: registry.example.com/etl-airflow:3.3.1
+    container_name: etl-prod-scheduler
+    restart: unless-stopped
+    environment: *airflow-env
+    volumes:
+      - airflow_home:/opt/airflow
+      - airflow_logs:/opt/airflow/logs
+    command: scheduler
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname $(hostname) 2>/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
+  airflow-dag-processor:
+    image: registry.example.com/etl-airflow:3.3.1
+    container_name: etl-prod-dag-processor
+    restart: unless-stopped
+    environment: *airflow-env
+    volumes:
+      - airflow_home:/opt/airflow
+      - airflow_logs:/opt/airflow/logs
+    command: dag-processor # Airflow 3.3: DAG 解析独立组件
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type DagProcessorJob --hostname $(hostname) 2>/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: etl-prod-nginx
+    restart: unless-stopped
+    depends_on:
+      - airflow-webserver
+    ports:
+      - "443:443" # TLS 证书由部署流程挂载;生产建议置于云 LB 之后
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/airflow.conf:ro
+      - ${TLS_CERT_DIR:-./tls}:/etc/nginx/tls:ro
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+
+volumes:
+  airflow_home:
+  airflow_logs:

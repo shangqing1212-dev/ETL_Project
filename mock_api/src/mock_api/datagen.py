@@ -75,6 +75,15 @@ def gen_orders_for_day(
     return tuple(orders)
 
 
+def _to_local_naive(dt: datetime) -> datetime:
+    """入参规范化: aware → Asia/Shanghai 本地时间 → naive(平台时间约定: 本地时区 naive)。"""
+    if dt.tzinfo is not None:
+        from zoneinfo import ZoneInfo
+
+        return dt.astimezone(ZoneInfo("Asia/Shanghai")).replace(tzinfo=None)
+    return dt
+
+
 def gen_orders_between(
     start: datetime,
     end: datetime,
@@ -84,6 +93,7 @@ def gen_orders_between(
     orders_per_day: int,
 ) -> list[dict[str, Any]]:
     """生成 [start, end) 窗口内 updated_at 的全部订单(按 updated_at 升序)。"""
+    start, end = _to_local_naive(start), _to_local_naive(end)
     rows: list[dict[str, Any]] = []
     d = start.date()
     while d <= end.date():

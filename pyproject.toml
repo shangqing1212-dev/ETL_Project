@@ -30,3 +30,13 @@ python_version = "3.12"
 strict = true
 files = ["sdk/src", "mock_api/src"]
 plugins = ["pandera.mypy"]
+
+# Airflow 无法安装在 Windows 本地(官方不支持),airflow 插件模块在 CI/容器内验证
+[[tool.mypy.overrides]]
+module = ["airflow", "airflow.*"]
+ignore_missing_imports = true
+
+# 本地无 airflow 包时其基类为 Any,关闭子类化检查(容器内装真包后不受影响)
+[[tool.mypy.overrides]]
+module = ["etl_sdk.airflow", "etl_sdk.airflow.*"]
+disallow_subclassing_any = false
