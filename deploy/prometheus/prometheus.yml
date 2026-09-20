@@ -1,0 +1,11 @@
+# Prometheus 抓取配置(生产挂载;dev 可在宿主机跑 exporter 后本机验证 curl)。
+# 监控策略(ADR-006): 只盯 4 个面板 —— DAG 成功率 / 任务时长 p95 / DQ 失败数 / 批次延迟,
+# 指标源 = etl_metrics_exporter.py(etl_meta 单一事实源),面板见 deploy/grafana/provisioning/dashboards/。
+global:
+  scrape_interval: 60s
+  evaluation_interval: 60s
+
+scrape_configs:
+  - job_name: etl-metrics
+    static_configs:
+      - targets: ["etl-metrics-exporter:9101"] # 生产改真实主机:端口

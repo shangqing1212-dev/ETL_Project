@@ -30,3 +30,4 @@ logs/
 # 平台
 .DS_Store
 Thumbs.db
+backups/

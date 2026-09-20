@@ -57,11 +57,34 @@ dws_daily 回填时构建窗口起点=data_interval_start。回填进度用 `air
 - 轮换:编辑该 JSON 文件(webserver 会加载),或按 SAM 文档重建;prod 密码文件持久化挂载,轮换后重启 webserver
 - 权限:SAM 角色 viewer/user/op/admin(配置 `[core] simple_auth_manager_users`);生产不把 SAM 暴露公网(nginx IP 白名单兜底)
 
-## 4. 数据库备份与恢复(待 M7)
+## 4. 数据库备份与恢复(M7)
 
-- 每日:mysqldump(etl_meta + ADS)
-- 每周:全量物理备份(XtraBackup)+ binlog PITR
-- 每月:**恢复演练**(步骤待 M7 回填)
+策略(ADR-006): 每日逻辑备份 + binlog(7 天)+ 生产周备 XtraBackup;每月恢复演练。
+
+```bash
+# 每日备份(dev compose;生产由 cron 调度,等价 mysqldump 命令见脚本 docstring)
+uv run python scripts/backup_mysql.py --keep 7
+uv run python scripts/backup_mysql.py --list
+
+# 每月恢复演练(破坏性: DROP 双库后重灌 + 关键表行数校验)
+uv run python scripts/restore_mysql.py --backup backups/etl-YYYYMMDD-HHMMSS.sql.gz
+# 演练通过标准: 恢复后 etl_batch/etl_watermark/dwd_orders/dws_shop_daily 行数与备份时点一致;
+# 恢复后若由 Airflow 接管,先起 airflow-init 重建 metadata 库授权(见 M5 章节)。
+```
+
+binlog 相关: 生产 my.cnf 见 deploy/mysql/my.cnf(log_bin=ROW、7 天保留);PITR 为文档化手工流程,
+生产首次使用前须在演练环境验证一次(ADR-006 后果)。
+
+## 4.1 监控(ADR-006: 4 面板)
+
+```bash
+# dev 冒烟(输出 Prometheus 文本)
+uv run python scripts/etl_metrics_exporter.py --interval 0.01
+# 常驻: uv run python scripts/etl_metrics_exporter.py --port 9101
+```
+
+面板(Grafana provision 于 deploy/grafana/): DAG 成功率、任务时长 p95、DQ 失败数/死信数、批次/水位延迟。
+口径 = etl_meta 单一事实源,排障时可直接 SQL 复现;告警走 AlertManager,Prometheus 不配告警规则(ADR-006)。
 
 ## 5. 版本升级(待 M7)
 

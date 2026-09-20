@@ -1,0 +1,8 @@
+# Grafana 数据源 provision(容器内挂载 /etc/grafana/provisioning/datasources/)
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090 # 生产改真实地址
+    isDefault: true

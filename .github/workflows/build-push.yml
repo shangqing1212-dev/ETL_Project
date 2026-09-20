@@ -1,0 +1,49 @@
+name: Build and Push Images
+
+# CI/CD 打镜像: 主分支 push tag(v*.*.*)时构建并推送生产镜像(GHCR,可替换为私有仓库)。
+# 镜像: etl-airflow(SDK + DAG 烘焙,生产唯一交付物);etl-superset(数仓驱动)。
+# 生产升级流程(runbook 第 5 节): 新 tag → 灰度 → compose pull && up -d → 失败回滚旧 tag。
+on:
+  push:
+    tags: ["v*.*.*"]
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Image tags
+        id: meta
+        run: |
+          echo "repo=${REGISTRY,,}/${{ github.repository }}-airflow" >> "$GITHUB_OUTPUT"
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - name: Build & push airflow
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: airflow/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.repo }}:${{ steps.meta.outputs.version }}
+            ${{ steps.meta.outputs.repo }}:latest
+      - name: Build & push superset
+        uses: docker/build-push-action@v6
+        with:
+          context: superset
+          file: superset/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.repo }}-superset:${{ steps.meta.outputs.version }}
+            ${{ steps.meta.outputs.repo }}-superset:latest

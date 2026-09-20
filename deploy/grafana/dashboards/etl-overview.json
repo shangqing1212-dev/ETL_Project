@@ -1,0 +1,81 @@
+{
+  "title": "ETL 总览(4 面板)",
+  "uid": "etl-overview",
+  "schemaVersion": 39,
+  "refresh": "1m",
+  "time": { "from": "now-24h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "DAG 成功率(近 24h)",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "avg by (table) (etl_batch_success_rate)",
+          "legendFormat": "{{table}}"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "orientation": "auto",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit", "min": 0, "max": 1 },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "任务时长 p95(ms)",
+      "gridPos": { "h": 8, "w": 12, "x": 6, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "etl_task_duration_ms_p95",
+          "legendFormat": "{{dag_id}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "DQ 失败数 / 死信数(近 24h)",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 4 },
+      "targets": [
+        { "refId": "A", "expr": "etl_dq_failures_total", "legendFormat": "DQ 失败" },
+        { "refId": "B", "expr": "etl_load_errors_total", "legendFormat": "死信" }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "orientation": "auto",
+        "textMode": "auto"
+      },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "批次延迟 / 水位延迟(分钟)",
+      "gridPos": { "h": 8, "w": 12, "x": 6, "y": 8 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "etl_batch_delay_minutes",
+          "legendFormat": "批次 {{table}}/{{shop_id}}"
+        },
+        {
+          "refId": "B",
+          "expr": "etl_watermark_age_minutes",
+          "legendFormat": "水位 {{table}}/{{shop_id}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "m" }, "overrides": [] }
+    }
+  ],
+  "templating": { "list": [] }
+}
