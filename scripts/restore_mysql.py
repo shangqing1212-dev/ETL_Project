@@ -70,14 +70,20 @@ def main() -> int:
     backup = args.backup or max(DEFAULT_BACKUP_DIR.glob("etl-*.sql.gz"), key=lambda p: p.name)
     print(f"[restore] 备份: {backup}")
 
-    if not args.verify_only:
-        if not args.yes:
-            answer = input(f"[restore] 将 DROP {', '.join(SCHEMAS)} 并从 {backup.name} 重灌,输入 yes 继续: ")
-            if answer.strip().lower() != "yes":
-                print("[restore] 已取消")
-                return 1
-        counts = restore(backup)
-        print(f"[restore] 恢复完成,关键表行数: {counts}")
+    if args.verify_only:
+        # 只校验不恢复: 读完全部 gzip 流(gzip 解压内置 CRC 校验,流损坏即抛错)
+        with gzip.open(backup, "rb") as fh:
+            while fh.read(1 << 20):
+                pass
+        print(f"[restore] 备份完整性校验通过: {backup} ({backup.stat().st_size / 1e6:.1f} MB)")
+        return 0
+    if not args.yes:
+        answer = input(f"[restore] 将 DROP {', '.join(SCHEMAS)} 并从 {backup.name} 重灌,输入 yes 继续: ")
+        if answer.strip().lower() != "yes":
+            print("[restore] 已取消")
+            return 1
+    counts = restore(backup)
+    print(f"[restore] 恢复完成,关键表行数: {counts}")
     return 0
 
 

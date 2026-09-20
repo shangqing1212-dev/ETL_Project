@@ -1,6 +1,6 @@
 # 运维手册(Runbook)
 
-> 骨架版本。M6 故障演练后按实际操作回填步骤与截图;M7 生产化后补充生产地址、账号体系、值班安排。
+> 第 2~6 节已按 M5~M7 实际演练回填;生产地址、账号体系、值班安排待生产部署时填写。
 
 ## 0. 环境清单
 
@@ -63,8 +63,10 @@ dws_daily 回填时构建窗口起点=data_interval_start。回填进度用 `air
 
 ```bash
 # 每日备份(dev compose;生产由 cron 调度,等价 mysqldump 命令见脚本 docstring)
+# 脚本自带产物自校验(完整读 gzip 流,CRC);另可随时对已有备份做完整性校验(不恢复):
 uv run python scripts/backup_mysql.py --keep 7
 uv run python scripts/backup_mysql.py --list
+uv run python scripts/restore_mysql.py --backup backups/etl-YYYYmmdd-HHMMSS.sql.gz --verify-only
 
 # 每月恢复演练(破坏性: DROP 双库后重灌 + 关键表行数校验)
 uv run python scripts/restore_mysql.py --backup backups/etl-YYYYMMDD-HHMMSS.sql.gz
@@ -86,9 +88,12 @@ uv run python scripts/etl_metrics_exporter.py --interval 0.01
 面板(Grafana provision 于 deploy/grafana/): DAG 成功率、任务时长 p95、DQ 失败数/死信数、批次/水位延迟。
 口径 = etl_meta 单一事实源,排障时可直接 SQL 复现;告警走 AlertManager,Prometheus 不配告警规则(ADR-006)。
 
-## 5. 版本升级(待 M7)
+## 5. 版本升级(M7)
 
-- 构建新 tag 镜像 → 灰度测试 DAG → `docker compose pull && up -d` → 自动 `db migrate` → 失败回滚旧 tag
+- 推 `v*.*.*` tag → CI 自动构建并推送 airflow/superset 镜像(GHCR,见 .github/workflows/build-push.yml)
+- prod: `docker compose -f airflow/docker-compose.prod.yaml pull && up -d` → 容器启动自动 `db migrate`
+  → 检查 dag-processor / api-server 日志确认无迁移报错
+- 失败回滚: compose 镜像固定 tag(版本写死,见 M5),回退旧 tag 重新 up
 
 ## 6. 常见故障处置(M6 故障演练验证过)
 

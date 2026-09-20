@@ -78,7 +78,5 @@ uv run pytest tests/e2e -q           # E2E(真实 mock API + MySQL: 故障注入
 - [x] M5 Airflow 集成(3.3.1 自定义镜像、EtlTable/DwBuild/DqScan 三个 Operator、3 个 DAG、SAM、dev/prod compose、回填封装)
 - [x] M6 故障演练与回填压测(故障注入 E2E 进 CI、幂等校验和、30 天回填实测、mock 分页性能修复、runbook 故障处置表)
 - [x] M7 生产化(备份/恢复演练脚本、binlog 配置、Prometheus exporter + Grafana 4 面板、logrotate、CI/CD 打镜像、ADR-006)
-- [ ] M6 故障演练与回填压测
-- [ ] M7 生产化
 
 详见 [docs/architecture.md](docs/architecture.md) 与 [docs/adr/](docs/adr/)。

@@ -19,7 +19,6 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import BinaryIO, cast
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BACKUP_DIR = PROJECT_ROOT / "backups"
@@ -32,32 +31,41 @@ def run_backup(backup_dir: Path, *, container: str = CONTAINER) -> Path:
     backup_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     out_path = backup_dir / f"etl-{stamp}.sql.gz"
-    with cast(BinaryIO, gzip.open(out_path, "wb")) as fh:
-        # dev 用 root(仅 dev);生产凭据与主机由部署流程注入,等价命令:
-        #   mysqldump --single-transaction --routines --triggers --databases etl_meta dw | gzip > ...
-        proc = subprocess.Popen(
-            [
-                "docker",
-                "exec",
-                "-i",
-                container,
-                "mysqldump",
-                "-uroot",
-                "-proot",
-                "--single-transaction",
-                "--routines",
-                "--triggers",
-                "--databases",
-                *SCHEMAS,
-            ],
-            stdout=fh,
-            stderr=subprocess.PIPE,
-        )
-        _, err = proc.communicate()
-    if proc.returncode != 0:
+    # dev 用 root(仅 dev);生产凭据与主机由部署流程注入,等价命令:
+    #   mysqldump --single-transaction --routines --triggers --databases etl_meta dw | gzip > ...
+    # 注意: gzip 文件对象不能直接作 Popen.stdout —— 其 fileno() 落到裸文件 fd,dump 会
+    # 绕过压缩写出纯文本(2026-09-20 踩坑);必须 PIPE + 流式写入 gzip。
+    proc = subprocess.Popen(
+        [
+            "docker",
+            "exec",
+            "-i",
+            container,
+            "mysqldump",
+            "-uroot",
+            "-proot",
+            "--single-transaction",
+            "--routines",
+            "--triggers",
+            "--databases",
+            *SCHEMAS,
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    assert proc.stdout is not None
+    with gzip.open(out_path, "wb") as fh:
+        while chunk := proc.stdout.read(1 << 20):
+            fh.write(chunk)
+    err = proc.stderr.read() if proc.stderr is not None else b""
+    if proc.wait() != 0:
         out_path.unlink(missing_ok=True)
         raise RuntimeError(f"mysqldump 失败: {err.decode(errors='replace')[:300]}")
-    print(f"[backup] 完成: {out_path}({out_path.stat().st_size / 1024 / 1024:.1f} MB)")
+    # 产物自校验: 完整读一遍 gzip 流(解压内置 CRC 校验),确认备份真实可恢复
+    with gzip.open(out_path, "rb") as fh:
+        while fh.read(1 << 20):
+            pass
+    print(f"[backup] 完成: {out_path}({out_path.stat().st_size / 1024 / 1024:.1f} MB,已自校验可解压)")
     return out_path
 
 
