@@ -72,6 +72,7 @@ uv run python scripts/restore_mysql.py --backup backups/etl-YYYYmmdd-HHMMSS.sql.
 uv run python scripts/restore_mysql.py --backup backups/etl-YYYYMMDD-HHMMSS.sql.gz
 # 演练通过标准: 恢复后 etl_batch/etl_watermark/dwd_orders/dws_shop_daily 行数与备份时点一致;
 # 恢复后若由 Airflow 接管,先起 airflow-init 重建 metadata 库授权(见 M5 章节)。
+# 演练记录: 2026-09-24 dev 首次恢复演练通过(恢复后行数 218/1/583,102/49,与备份时点一致)。
 ```
 
 binlog 相关: 生产 my.cnf 见 deploy/mysql/my.cnf(log_bin=ROW、7 天保留);PITR 为文档化手工流程,
